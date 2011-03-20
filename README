@@ -1,1 +1,29 @@
-Research-related programs.
+Research-related programs and materials.
+
+ic.c: Sample Implementation of
+    Yamazaki and Tanaka (2005).
+    Neural Modeling of an Internal Clock.
+    Neural Computation 17:1032--1058.
+
+ic_cublas.cu: Implemantation of the same model using CUBLAS.
+
+N = 1000, T = 1000, comment 'output()' out.
+264 % gcc -O2 ic.c
+265 % time ./a.out o
+./a.out o  2.51s user 0.04s system 99% cpu 2.572 total
+266 % time ./a.out o
+./a.out o  2.51s user 0.04s system 99% cpu 2.564 total
+267 % time ./a.out o
+./a.out o  2.50s user 0.04s system 99% cpu 2.557 total
+268 % time ./a.out o
+./a.out o  2.52s user 0.04s system 97% cpu 2.636 total
+
+274 % nvcc -I/usr/local/cuda/include/ -L/usr/local/cuda/lib ic_cublas.cu -lcublas
+275 % time ./a.out o_cublas
+./a.out o_cublas  1.16s user 0.14s system 95% cpu 1.358 total
+276 % time ./a.out o_cublas
+./a.out o_cublas  1.20s user 0.13s system 99% cpu 1.332 total
+277 % time ./a.out o_cublas
+./a.out o_cublas  1.15s user 0.13s system 99% cpu 1.285 total
+278 % time ./a.out o_cublas
+./a.out o_cublas  1.11s user 0.13s system 99% cpu 1.245 total
