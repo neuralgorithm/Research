@@ -21,8 +21,8 @@
 
 double *w, *z, *u, *result;
 
-extern void init_genrand(unsigned long);
-extern double genrand_real2(void);
+//extern void init_genrand(unsigned long);
+//extern double genrand_real2(void);
 
 void initialize()
 {
@@ -38,14 +38,16 @@ void initialize()
     u[i] = I;
   }
 
-  init_genrand(23L);
+  srand(23);
+  //init_genrand(23L);
 
   for(i = 0; i < N; i++){
     for(j = 0; j < N; j++){
       if (i == j){
 	w[j+N*i] = 0;
       }else{
-	if (genrand_real2() < Pr){
+	//if (genrand_real2() < Pr){
+	if ((float)rand()/(float)RAND_MAX < Pr){
 	  w[j+N*i] = 1;
 	}else{
 	  w[j+N*i] = 0;
@@ -118,7 +120,7 @@ int main(int argc, char *argv[])
 
   initialize();
   loop();
-  output(prefix);
+  //output(prefix);
   finalize();
 
   return 0;
