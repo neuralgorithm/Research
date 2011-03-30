@@ -7,6 +7,8 @@ ic.c: Sample Implementation of
 
 ic_cublas.cu: Implemantation of the same model using CUBLAS.
 
+On MacBookAir w/GeForce 320M
+
 N = 1000, T = 1000, comment 'output()' out.
 264 % gcc -O2 ic.c
 265 % time ./a.out o
@@ -27,3 +29,30 @@ N = 1000, T = 1000, comment 'output()' out.
 ./a.out o_cublas  1.15s user 0.13s system 99% cpu 1.285 total
 278 % time ./a.out o_cublas
 ./a.out o_cublas  1.11s user 0.13s system 99% cpu 1.245 total
+
+si.c: Sample Implementation of Similarity Index, defined by
+    Yamazaki and Tanaka (2005).
+    Neural Modeling of an Internal Clock.
+    Neural Computation 17:1032--1058.
+
+si_cuda.cu: Implementation in CUDA (note only global memory is used).
+
+On Ubuntu 10.10 w/ Core i7-2600 & GeForce GTX580
+
+84 % time ./si o.o c
+./si o.o c  1.59s user 0.03s system 99% cpu 1.627 total
+85 % time ./si o.o c
+./si o.o c  1.61s user 0.02s system 99% cpu 1.633 total
+86 % time ./si o.o c
+./si o.o c  1.57s user 0.06s system 90% cpu 1.802 total
+87 % time ./si o.o c
+./si o.o c  1.59s user 0.04s system 99% cpu 1.634 total
+
+88 % time ./si_cuda o.o c
+./si_cuda o.o c_cuda  0.64s user 0.17s system 93% cpu 0.865 total
+89 % time ./si_cuda o.o c
+./si_cuda o.o c_cuda  0.63s user 0.17s system 86% cpu 0.921 total
+90 % time ./si_cuda o.o c
+./si_cuda o.o c_cuda  0.67s user 0.13s system 95% cpu 0.836 total
+91 % time ./si_cuda o.o c
+./si_cuda o.o c_cuda  0.68s user 0.13s system 91% cpu 0.884 total
