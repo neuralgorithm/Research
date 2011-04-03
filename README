@@ -7,6 +7,15 @@ ic.c: Sample Implementation of
 
 ic_cublas.cu: Implemantation of the same model using CUBLAS.
 
+ic_cuda.cu: Implementation using global memory.
+
+ic_sparse.c: The same model with sparse connections.
+
+ic_sparse_cuda.cu: The same model with sparse connections using global memory.
+
+ic_shared.cu: Implementation using shared memory.
+
+
 On MacBookAir w/GeForce 320M
 
 N = 1000, T = 1000, comment 'output()' out.
