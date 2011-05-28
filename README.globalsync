@@ -1,0 +1,222 @@
+= Title: Global synchronization of threads across blocks on CUDA.
+  Author: neuralgorithm
+
+== Summary
+The CUDA function "__syncthreads()" synchronizes threads within a block.
+The function does not synchronize threads in different blocks. In fact,
+CUDA does not provide any way to synchronize all threads globally.
+
+I wrote a code snippet that synchronizes all threads globally. I adopted
+the global synchronization technique to a simulation program of a neural
+network.
+
+== Text
+
+A typical simulation program of a neural network maybe something like this:
+-------------------------------------------------------------------------------
+void compute(const int t, const int i)
+{
+  // compute the activity of neuron i at time t.
+  ...
+}
+int main(void)
+{
+  int t, i;
+
+  initialize();
+  for(t = 0; t < maxSimulationSteps; t++){
+    for(i = 0; i < numberOfNeurons; i++){
+      compute(t, i);
+    }
+  }
+  finalize();
+  return 0;
+}
+-------------------------------------------------------------------------------
+There are two loops: one for time, and the other for neurons.
+
+Using CUDA, we can compute the function "compute(t, i)" in parallel with
+respect to i as:
+-------------------------------------------------------------------------------
+__global__ void kernel(int t)
+{
+  int i = blockIdx.x*blockDim.x + threadIdx.x;
+  compute(t, i);
+}
+int main(void)
+{
+  int t;
+
+  initialize();
+  for(t = 0; t < maxSimulationSteps; t++){
+    kernel<<<numberOfNeurons/threadsPerBlock, threadsPerBlock>>>(t);
+  }
+  finalize();
+  return 0;
+}
+-------------------------------------------------------------------------------
+This code works perfectly, and runs faster than the original one if
+the number of neurons is large.
+
+Now, it is possible to include the loop with respect to t in the kernel
+as well:
+-------------------------------------------------------------------------------
+__global__ void kernel(void)
+{
+  int t;
+  int i = blockIdx.x*blockDim.x + threadIdx.x;
+
+  for(t = 0; t < maxSimulationSteps; t++){
+    compute(t, i);
+    globalsynchronize();
+  }
+}
+int main(void)
+{
+  initialize();
+  kernel<<<numberOfNeurons/threadsPerBlock, threadsPerBlock>>>();
+  finalize();
+  return 0;
+}
+-------------------------------------------------------------------------------
+where the function "globalsynchronize()" is assumed to synchronize
+all threads on the device globally.
+
+This code could be better than the previous one, because in the previous
+code:
+
+* many threads are created and deleted for each time step, which may
+  cost expensive even if CUDA threads are lightweight. On the other hand,
+  the new code does not repeat creation/deletion of threads.
+
+* if the function compute() accesses global memory, the access must be
+  repeated for each time step, costing expensive. On the other hand,
+  the new code can store the pertinent memory part in register and/or
+  shared memory and used repeatedly across time steps, so that we can
+  minimize the global memory access.
+
+So, I wrote a code snippet for globalsynchronize() as follows:
+-------------------------------------------------------------------------------
+int *global_sync;
+
+
+if (threadIdx.x == 0){
+  atomicAdd(global_sync, 1);
+  if (blockIdx.x == 0){
+    while(atomicAdd(global_sync,0) < numberOfNeurons/threadsPerBlocks);
+    atomicExch(global_sync,0);
+  }else{
+    while(atomicAdd(global_sync,0) > 0);
+  }
+}
+__syncthreads();
+-------------------------------------------------------------------------------
+The idea is straightforward. At the end of each iteration, the
+represenative thread (threadIdx.x = 0) in each block adds 1 to
+a variable on global memory (*global_sync). Then, the representative
+thread of the representative block (threadIdx.x == 0 and blockIdx.x == 0)
+waits until the value of the variable becomes equal to the number of
+blocks (i.e., all representative threads add their 1 to the variable),
+and then clears the variable by writing 0. The representative threads of
+the other blocks wait until the variable is cleared (i.e., the value of
+the variable becomes equal to 0). Thus, the representative threads are
+synchronized. Finally, the function __syncthreads() synchronizes threads
+within a block, thereby synchronizing all threads globally.
+
+According to the above idea, I tested the following 3 codes, which are
+implementations of my internal clock model:
+
+ic0.c  ... CPU version of an internal clock model, identical to ic.c.
+
+ic1.cu ... GPU version. A kernel is invoked repeatedly within a loop.
+
+ic7.cu ... GPU version. A kernel is invoked once from the host. The
+           kernel has the loop. For each step, all threads across
+           blocks are synchronized using atomic operations.
+
+As I expected, ic7.cu was the fastest among them. In fact, ic7.cu
+was much faster than ic1.cu, the simple CUDA version. See below for
+the detail.
+
+Note: on Fermi architecture such as GTX580, repeated access to global
+memory has not to be made directly but indirectly via volatile pointers,
+because the memory contents are cached and thereby repeated read/write
+could become incoherent. Read p.3 of Fermi compatibility guide(*) for 
+further details.
+(*) http://developer.download.nvidia.com/compute/cuda/4_0_rc2/toolkit/docs/Fermi_Compatibility_Guide.pdf
+
+-------------------------------------------------------------------------------
+Hardware: Corei7-2600 + GTX580
+OS: Ubuntu 11.04
+CUDA Version: 3.2
+
+T = 1000 (= maxSimulationSteps)
+threads/block = 64 (= threadsPerBlock)
+
+N = 1024 (= numberOfNeurons)
+% nvcc -arch sm_20 -o ic7 ic7.cu
+% time ./ic7 o_ic7
+./ic7 o_ic7  0.26s user 0.13s system 90% cpu 0.433 total
+% time ./ic7 o_ic7
+./ic7 o_ic7  0.28s user 0.10s system 94% cpu 0.402 total
+% time ./ic7 o_ic7
+./ic7 o_ic7  0.29s user 0.08s system 94% cpu 0.390 total
+% nvcc -arch sm_20 -o ic1 ic1.cu
+% time ./ic1 o_ic1
+./ic1 o_ic1  0.48s user 0.10s system 98% cpu 0.590 total
+% time ./ic1 o_ic1
+./ic1 o_ic1  0.47s user 0.10s system 97% cpu 0.586 total
+% time ./ic1 o_ic1
+./ic1 o_ic1  0.46s user 0.11s system 97% cpu 0.583 total
+% gcc -O2 -o ic0 ic0.c
+% time ./ic0 o_ic0
+./ic0 o_ic0  0.66s user 0.01s system 99% cpu 0.673 total
+% time ./ic0 o_ic0
+./ic0 o_ic0  0.67s user 0.00s system 99% cpu 0.674 total
+% time ./ic0 o_ic0
+./ic0 o_ic0  0.66s user 0.01s system 99% cpu 0.674 total
+
+N = 2048 (= numberOfNeurons)
+% nvcc -arch sm_20 -o ic7 ic7.cu
+% time ./ic7 o_ic7
+./ic7 o_ic7  0.78s user 0.16s system 96% cpu 0.971 total
+% time ./ic7 o_ic7
+./ic7 o_ic7  0.81s user 0.11s system 98% cpu 0.933 total
+% time ./ic7 o_ic7
+./ic7 o_ic7  0.84s user 0.09s system 98% cpu 0.948 total
+% nvcc -arch sm_20 -o ic1 ic1.cu
+% time ./ic1 o_ic1
+./ic1 o_ic1  1.19s user 0.12s system 96% cpu 1.351 total
+% time ./ic1 o_ic1
+./ic1 o_ic1  1.16s user 0.14s system 98% cpu 1.314 total
+% time ./ic1 o_ic1
+./ic1 o_ic1  1.19s user 0.11s system 98% cpu 1.321 total
+% gcc -O2 -o ic0 ic0.c
+% time ./ic0 o_ic0
+./ic0 o_ic0  2.73s user 0.03s system 99% cpu 2.772 total
+% time ./ic0 o_ic0
+./ic0 o_ic0  2.74s user 0.02s system 99% cpu 2.772 total
+% time ./ic0 o_ic0
+
+N = 4096 (= numberOfNeurons)
+% nvcc -arch sm_20 -o ic7 ic7.cu
+% time ./ic7 o_ic7
+./ic7 o_ic7  2.22s user 0.17s system 98% cpu 2.437 total
+% time ./ic7 o_ic7
+./ic7 o_ic7  2.21s user 0.18s system 99% cpu 2.401 total
+% time ./ic7 o_ic7
+./ic7 o_ic7  2.25s user 0.14s system 99% cpu 2.405 total
+% nvcc -arch sm_20 -o ic1 ic1.cu
+% time ./ic1 o_ic1
+./ic1 o_ic1  4.44s user 0.16s system 99% cpu 4.631 total
+% time ./ic1 o_ic1
+./ic1 o_ic1  4.44s user 0.15s system 99% cpu 4.605 total
+% time ./ic1 o_ic1
+./ic1 o_ic1  4.47s user 0.13s system 99% cpu 4.617 total
+% gcc -O2 -o ic0 ic0.c
+% time ./ic0 o_ic0
+./ic0 o_ic0  10.67s user 0.04s system 99% cpu 10.726 total
+% time ./ic0 o_ic0
+./ic0 o_ic0  10.65s user 0.06s system 99% cpu 10.725 total
+% time ./ic0 o_ic0
+./ic0 o_ic0  10.65s user 0.06s system 99% cpu 10.730 total
